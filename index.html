@@ -128,12 +128,12 @@
         }
 
         .view-id {
-            font-size: 1.4rem;
+            font-size: 2rem;
             font-weight: bold;
             background: #00000066;
-            padding: 8px 12px;
+            padding: 12px;
             border-radius: 40px;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
             color: #7bc5ff;
             word-break: break-all;
             font-family: monospace;
@@ -178,6 +178,12 @@
         .error-badge {
             color: #f87171;
         }
+
+        .short-id {
+            font-size: 0.8rem;
+            color: #9aa6c5;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -207,17 +213,19 @@
         <div class="view-id" id="viewIdDisplay">
             <span class="loading-spinner"></span> Loading...
         </div>
+        <div class="short-id" id="shortIdDisplay"></div>
         <div style="font-size:12px; margin-top:8px;">
-            👥 Viewers: Enter this ID in the field below and click Watch
+            👥 Viewers: Enter the SHORT ID or FULL ID above and click Watch
         </div>
-        <button id="copyIdBtn" style="margin-top: 10px; background: #2d3a5e; padding: 6px 12px; font-size: 0.75rem;">📋 Copy ID</button>
+        <button id="copyIdBtn" style="margin-top: 10px; background: #2d3a5e; padding: 6px 12px; font-size: 0.75rem;">📋 Copy Full ID</button>
+        <button id="copyShortIdBtn" style="margin-top: 10px; background: #2d3a5e; padding: 6px 12px; font-size: 0.75rem; margin-left: 8px;">📋 Copy Short ID</button>
     </div>
 
     <!-- Viewer card -->
     <div class="card">
         <h3>👁️ WATCH & RECORD (Other Device)</h3>
         <div class="flex-row">
-            <input type="text" id="remoteViewIdInput" placeholder="Enter View ID to watch" autocomplete="off">
+            <input type="text" id="remoteViewIdInput" placeholder="Enter View ID (short or full) to watch" autocomplete="off">
             <button id="connectViewBtn" class="btn-primary">▶️ Watch</button>
         </div>
         <div class="video-box" style="margin-top:12px;">
@@ -234,20 +242,21 @@
     <div class="sub">⭐ Recording saves as WebM video to Google Drive | Works on Kiwi/Android 5+</div>
 </div>
 
-<!-- Load PeerJS from CDN with fallback -->
+<!-- Load PeerJS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
 <script type="text/javascript">
-    // Wait for DOM and PeerJS
-    let peerInitialized = false;
+    // Global variables
     let peer = null;
     let localStream = null;
     let activeCall = null;
     let currentViewId = "";
+    let shortViewId = "";
     
     // Viewer side
     let viewerPeer = null;
     let viewerConnection = null;
     let remoteStreamActive = null;
+    let viewerPeerReady = false;
     
     // Recording
     let mediaRecorder = null;
@@ -268,6 +277,7 @@
     const startCamBtn = document.getElementById('startCamBtn');
     const stopCamBtn = document.getElementById('stopCamBtn');
     const viewIdDisplay = document.getElementById('viewIdDisplay');
+    const shortIdDisplay = document.getElementById('shortIdDisplay');
     const remoteViewIdInput = document.getElementById('remoteViewIdInput');
     const connectViewBtn = document.getElementById('connectViewBtn');
     const startRecordBtn = document.getElementById('startRecordBtn');
@@ -278,11 +288,22 @@
     const broadcasterStatus = document.getElementById('broadcasterStatus');
     const remoteVideo = document.getElementById('remoteVideo');
     const copyIdBtn = document.getElementById('copyIdBtn');
+    const copyShortIdBtn = document.getElementById('copyShortIdBtn');
     const camStateSpan = document.getElementById('camState');
     
     function updateStatus(elem, msg, isError = false) {
         elem.innerHTML = msg;
         elem.style.color = isError ? "#ffaaaa" : "#eef4ff";
+    }
+    
+    // Generate short ID from full ID
+    function generateShortId(fullId) {
+        if (!fullId) return "";
+        // Take first 6 characters and last 4 characters
+        if (fullId.length > 10) {
+            return fullId.substring(0, 6) + fullId.substring(fullId.length - 4);
+        }
+        return fullId;
     }
     
     // Initialize Broadcaster Peer
@@ -298,8 +319,7 @@
                     config: { 
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun1.l.google.com:19302' },
-                            { urls: 'stun:stun2.l.google.com:19302' }
+                            { urls: 'stun:stun1.l.google.com:19302' }
                         ] 
                     },
                     debug: 0
@@ -308,9 +328,10 @@
                 peer.on('open', (id) => {
                     console.log('Broadcaster peer opened with ID:', id);
                     currentViewId = id;
+                    shortViewId = generateShortId(id);
                     viewIdDisplay.innerHTML = id;
+                    shortIdDisplay.innerHTML = `📌 Short ID: ${shortViewId} (use this for easier sharing)`;
                     updateStatus(broadcasterStatus, "✅ Broadcast peer ready! Start camera to go live.", false);
-                    peerInitialized = true;
                     resolve(peer);
                 });
                 
@@ -320,35 +341,23 @@
                         incomingCall.answer(localStream);
                         activeCall = incomingCall;
                         activeCall.on('stream', (stream) => {
-                            console.log('Viewer connected and receiving stream');
+                            console.log('Viewer connected');
                             updateStatus(broadcasterStatus, "📹 Viewer is watching your stream!", false);
                         });
                         activeCall.on('close', () => {
                             updateStatus(broadcasterStatus, "📹 Viewer disconnected", false);
                         });
                     } else {
-                        console.log('No local stream to answer call');
                         incomingCall.close();
                     }
                 });
                 
                 peer.on('error', (err) => {
                     console.error('Peer error:', err);
-                    if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
-                        // Retry with new ID
-                        setTimeout(() => initBroadcasterPeer(), 1000);
-                    } else {
+                    if (err.type !== 'unavailable-id') {
                         updateStatus(broadcasterStatus, `⚠️ Error: ${err.type}`, true);
                     }
                     reject(err);
-                });
-                
-                peer.on('disconnected', () => {
-                    console.log('Peer disconnected, reconnecting...');
-                    updateStatus(broadcasterStatus, "⚠️ Reconnecting...", true);
-                    if (peer && !peer.destroyed) {
-                        peer.reconnect();
-                    }
                 });
                 
             } catch (err) {
@@ -358,10 +367,11 @@
         });
     }
     
-    // Initialize Viewer Peer
+    // Initialize Viewer Peer - FIXED: properly handle initialization
     function initViewerPeer() {
         return new Promise((resolve, reject) => {
             if (viewerPeer && !viewerPeer.destroyed) {
+                viewerPeerReady = true;
                 resolve(viewerPeer);
                 return;
             }
@@ -378,13 +388,22 @@
                 
                 viewerPeer.on('open', (id) => {
                     console.log('Viewer peer ready:', id);
+                    viewerPeerReady = true;
                     resolve(viewerPeer);
                 });
                 
                 viewerPeer.on('error', (err) => {
                     console.error('Viewer peer error:', err);
+                    viewerPeerReady = false;
                     reject(err);
                 });
+                
+                // Set timeout to ensure we don't wait forever
+                setTimeout(() => {
+                    if (!viewerPeerReady) {
+                        reject(new Error("Viewer peer initialization timeout"));
+                    }
+                }, 5000);
                 
             } catch (err) {
                 console.error('Failed to create viewer peer:', err);
@@ -421,11 +440,6 @@
                 await initBroadcasterPeer();
             }
             
-            // Update status
-            if (currentViewId) {
-                updateStatus(broadcasterStatus, `📹 Broadcasting LIVE! View ID: ${currentViewId}`, false);
-            }
-            
         } catch(e) {
             console.error('Camera error:', e);
             let errorMsg = "❌ Camera access denied or unavailable";
@@ -451,7 +465,7 @@
         }
     }
     
-    // Connect to broadcaster as viewer
+    // Connect to broadcaster as viewer - FIXED: ensure viewer peer is ready
     async function connectToBroadcaster(viewId) {
         if (!viewId || viewId.trim() === "") {
             alert("Please enter a View ID");
@@ -462,9 +476,16 @@
         updateStatus(recordStatusSpan, `⏳ Connecting to ${viewId}...`, false);
         
         try {
-            if (!viewerPeer || viewerPeer.destroyed) {
+            // Make sure viewer peer is initialized and ready
+            if (!viewerPeerReady || !viewerPeer || viewerPeer.destroyed) {
+                updateStatus(recordStatusSpan, "🔄 Initializing connection...", false);
                 await initViewerPeer();
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // Double check viewer peer is ready
+            if (!viewerPeer || viewerPeer.destroyed) {
+                throw new Error("Viewer peer not ready");
             }
             
             if (viewerConnection) {
@@ -474,7 +495,9 @@
             
             remoteVideo.srcObject = null;
             remoteStreamActive = null;
+            window.currentRemoteStream = null;
             
+            // Make the call
             const call = viewerPeer.call(viewId, null);
             viewerConnection = call;
             
@@ -507,6 +530,7 @@
         } catch (err) {
             console.error('Connection error:', err);
             updateStatus(recordStatusSpan, `❌ Failed to connect: ${err.message}`, true);
+            viewerPeerReady = false;
         }
     }
     
@@ -602,7 +626,6 @@
     
     function initTokenClient() {
         if (typeof google === 'undefined' || !google.accounts) {
-            updateStatus(driveStatusSpan, "⚠️ Loading Google auth...", false);
             setTimeout(initTokenClient, 500);
             return;
         }
@@ -687,7 +710,7 @@
         }
     }
     
-    // Copy ID to clipboard
+    // Copy functions
     function copyViewId() {
         if (currentViewId) {
             navigator.clipboard.writeText(currentViewId).then(() => {
@@ -702,6 +725,20 @@
         }
     }
     
+    function copyShortId() {
+        if (shortViewId) {
+            navigator.clipboard.writeText(shortViewId).then(() => {
+                const originalText = copyShortIdBtn.innerHTML;
+                copyShortIdBtn.innerHTML = "✅ Copied!";
+                setTimeout(() => { copyShortIdBtn.innerHTML = originalText; }, 2000);
+            }).catch(() => {
+                alert("Short ID: " + shortViewId);
+            });
+        } else {
+            alert("Waiting for Short ID to load...");
+        }
+    }
+    
     // Event listeners
     startCamBtn.onclick = startCameraAndBroadcast;
     stopCamBtn.onclick = stopBroadcast;
@@ -710,6 +747,7 @@
     stopRecordBtn.onclick = stopRecording;
     authDriveBtn.onclick = authenticateDrive;
     copyIdBtn.onclick = copyViewId;
+    copyShortIdBtn.onclick = copyShortId;
     
     // Initialize
     async function init() {
@@ -733,7 +771,7 @@
     
     // Handle autoplay
     remoteVideo.addEventListener('loadedmetadata', () => {
-        remoteVideo.play().catch(e => console.log("Autoplay blocked, user interaction needed"));
+        remoteVideo.play().catch(e => console.log("Autoplay blocked"));
     });
 </script>
 </body>
