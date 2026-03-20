@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Live Trip Tracker - Share Your Journey</title>
+    <!-- Leaflet CSS for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            background: #f0f2f5;
+        }
+
+        /* Map Container */
+        #map {
+            height: 100vh;
+            width: 100%;
+            z-index: 1;
+        }
+
+        /* Mode Switch */
+        .mode-switch {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 50px;
+            padding: 5px;
+            display: flex;
+            gap: 5px;
+            z-index: 1001;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .mode-btn {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            color: white;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background: #4caf50;
+            color: white;
+        }
+
+        /* Control Panel */
+        .control-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 15px 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            min-width: 280px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Stats Panel */
+        .stats-panel {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: 500;
+            min-width: 200px;
+            text-align: right;
+            font-family: monospace;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .tracking-panel {
+            position: fixed;
+            top: 80px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            font-size: 14px;
+            min-width: 220px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .tracking-id {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: #4caf50;
+            word-break: break-all;
+            margin: 5px 0;
+        }
+
+        .stats-panel div, .tracking-panel div {
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.7;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .distance-value {
+            color: #2196f3;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-primary {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #da190b;
+            transform: translateY(-2px);
+        }
+
+        .btn-info {
+            background: #2196f3;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #0b7dda;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #ff9800;
+            color: white;
+        }
+
+        .btn-secondary:active {
+            transform: translateY(0);
+        }
+
+        /* Input Group */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        /* Status Indicator */
+        .status {
+            position: fixed;
+            top: 80px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-dot.active {
+            background: #4caf50;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+            }
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 1000;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+        }
+
+        /* Share Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            max-width: 90%;
+            width: 320px;
+            text-align: center;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+        }
+
+        .tracking-code {
+            background: #f0f2f5;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            font-family: monospace;
+            margin: 15px 0;
+            word-break: break-all;
+        }
+
+        .close-modal {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .control-panel {
+                bottom: 10px;
+                padding: 10px 15px;
+                gap: 10px;
+            }
+            .btn {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            .stats-panel {
+                top: 70px;
+                right: 10px;
+                font-size: 12px;
+                min-width: 160px;
+            }
+            .mode-switch {
+                top: 10px;
+            }
+            .mode-btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <div class="mode-switch">
+        <button class="mode-btn active" id="broadcasterMode">📍 Share Location</button>
+        <button class="mode-btn" id="trackerMode">👁️ Track Someone</button>
+    </div>
+    
+    <!-- Broadcaster Mode UI -->
+    <div id="broadcasterUI">
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Not Recording</span>
+        </div>
+        
+        <div class="stats-panel" id="statsPanel">
+            <div class="stat-label">YOUR TRIP STATS</div>
+            <div>📍 Points: <span id="pointCount" class="stat-value">0</span></div>
+            <div>📏 Distance: <span id="distance" class="stat-value distance-value">0</span> <span style="font-size:12px">km</span></div>
+            <div>⏱️ Duration: <span id="duration" class="stat-value">00:00:00</span></div>
+        </div>
+        
+        <div class="control-panel">
+            <button class="btn btn-primary" id="startBtn">▶ Start Trip</button>
+            <button class="btn btn-danger" id="stopBtn" disabled>⏹️ Stop Trip</button>
+            <button class="btn btn-info" id="shareBtn" disabled>🔗 Share Tracking ID</button>
+        </div>
+    </div>
+    
+    <!-- Tracker Mode UI -->
+    <div id="trackerUI" style="display: none;">
+        <div class="tracking-panel">
+            <div class="stat-label">TRACK SOMEONE</div>
+            <div>Enter Tracking ID:</div>
+            <div class="input-group">
+                <input type="text" id="trackingIdInput" placeholder="e.g., TRIP-ABC123">
+                <button class="btn btn-info" id="trackBtn" style="padding: 8px 16px;">Track</button>
+            </div>
+            <div id="trackerStatus" style="margin-top: 10px; font-size: 12px; color: #ff9800;"></div>
+        </div>
+        
+        <div class="stats-panel" id="trackerStatsPanel">
+            <div class="stat-label">TRACKING INFO</div>
+            <div>👤 User: <span id="trackedUser">-</span></div>
+            <div>📍 Points: <span id="trackedPoints">0</span></div>
+            <div>📏 Distance: <span id="trackedDistance">0</span> km</div>
+            <div>⏱️ Duration: <span id="trackedDuration">00:00:00</span></div>
+            <div>🕐 Last Update: <span id="lastUpdate">-</span></div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast" style="opacity: 0;">Toast message</div>
+    
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal">
+        <div class="modal-content">
+            <h3>📱 Share Your Tracking ID</h3>
+            <p>Share this ID with friends to let them track your location:</p>
+            <div class="tracking-code" id="trackingCode"></div>
+            <button class="close-modal" onclick="closeModal()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let map;
+        let currentMode = 'broadcaster'; // 'broadcaster' or 'tracker'
+        let broadcasterData = {
+            isActive: false,
+            trackingId: null,
+            trackPoints: [],
+            startTime: null,
+            watchId: null,
+            timerInterval: null
+        };
+        
+        let trackerData = {
+            isTracking: false,
+            trackingId: null,
+            updateInterval: null,
+            currentMarker: null,
+            routeLayer: null,
+            lastData: null
+        };
+        
+        // Storage key for location data
+        const STORAGE_PREFIX = 'trip_tracker_';
+        
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([20.5937, 78.9629], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            // Initialize route layer for tracker
+            trackerData.routeLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Show toast message
+        function showToast(message, duration = 2000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, duration);
+        }
+        
+        // Generate random tracking ID
+        function generateTrackingId() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+            let id = 'TRIP-';
+            for (let i = 0; i < 6; i++) {
+                id += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return id;
+        }
+        
+        // Save location data to localStorage
+        function saveLocationData(trackingId, data) {
+            try {
+                localStorage.setItem(STORAGE_PREFIX + trackingId, JSON.stringify(data));
+            } catch (e) {
+                console.error('Error saving data:', e);
+            }
+        }
+        
+        // Get location data from localStorage
+        function getLocationData(trackingId) {
+            try {
+                const data = localStorage.getItem(STORAGE_PREFIX + trackingId);
+                return data ? JSON.parse(data) : null;
+            } catch (e) {
+                console.error('Error reading data:', e);
+                return null;
+            }
+        }
+        
+        // Update broadcaster's data in storage
+        function updateBroadcasterData() {
+            if (!broadcasterData.trackingId || !broadcasterData.isActive) return;
+            
+            const data = {
+                trackingId: broadcasterData.trackingId,
+                isActive: broadcasterData.isActive,
+                trackPoints: broadcasterData.trackPoints,
+                startTime: broadcasterData.startTime,
+                lastUpdate: Date.now()
+            };
+            
+            saveLocationData(broadcasterData.trackingId, data);
+        }
+        
+        // Calculate distance between two points in km
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // Update total distance
+        function updateTotalDistance(points) {
+            if (points.length < 2) return 0;
+            let total = 0;
+            for (let i = 1; i < points.length; i++) {
+                total += calculateDistance(points[i-1].lat, points[i-1].lng, points[i].lat, points[i].lng);
+            }
+            return total;
+        }
+        
+        // Update broadcaster stats
+        function updateBroadcasterStats() {
+            document.getElementById('pointCount').textContent = broadcasterData.trackPoints.length;
+            const totalDist = updateTotalDistance(broadcasterData.trackPoints);
+            document.getElementById('distance').textContent = totalDist.toFixed(2);
+            
+            if (broadcasterData.startTime && broadcasterData.isActive) {
+                const elapsed = Math.floor((Date.now() - broadcasterData.startTime) / 1000);
+                const hours = Math.floor(elapsed / 3600);
+                const minutes = Math.floor((elapsed % 3600) / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('duration').textContent = 
+                    `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+        
+        // Handle new GPS position for broadcaster
+        function handleBroadcasterPosition(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            
+            const newPoint = {
+                lat: lat,
+                lng: lng,
+                timestamp: Date.now()
+            };
+            
+            broadcasterData.trackPoints.push(newPoint);
+            updateBroadcasterStats();
+            updateBroadcasterData();
+            
+            // Update map
+            if (broadcasterData.currentMarker) {
+                broadcasterData.currentMarker.remove();
+            }
+            
+            broadcasterData.currentMarker = L.marker([lat, lng], {
+                icon: L.divIcon({
+                    html: `<div style="background-color: #4caf50; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                    iconSize: [16, 16]
+                })
+            }).addTo(map);
+            
+            // Draw route
+            if (broadcasterData.routeLayer) {
+                broadcasterData.routeLayer.clearLayers();
+            } else {
+                broadcasterData.routeLayer = L.layerGroup().addTo(map);
+            }
+            
+            if (broadcasterData.trackPoints.length > 1) {
+                const latlngs = broadcasterData.trackPoints.map(p => [p.lat, p.lng]);
+                L.polyline(latlngs, { color: '#4caf50', weight: 4 }).addTo(broadcasterData.routeLayer);
+            }
+            
+            map.setView([lat, lng], Math.max(map.getZoom(), 15));
+        }
+        
+        // Start broadcasting
+        function startBroadcasting() {
+            if (!navigator.geolocation) {
+                showToast('Geolocation not supported', 3000);
+                return;
+            }
+            
+            if (broadcasterData.trackPoints.length > 0) {
+                if (!confirm('Start new trip? Previous track will be cleared.')) {
+                    return;
+                }
+                broadcasterData.trackPoints = [];
+                if (broadcasterData.routeLayer) broadcasterData.routeLayer.clearLayers();
+            }
+            
+            broadcasterData.isActive = true;
+            broadcasterData.startTime = Date.now();
+            broadcasterData.trackingId = generateTrackingId();
+            
+            // Start watching position
+            broadcasterData.watchId = navigator.geolocation.watchPosition(
+                handleBroadcasterPosition,
+                (error) => {
+                    console.error('GPS Error:', error);
+                    showToast('GPS error: ' + error.message, 3000);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+            
+            // Start timer
+            broadcasterData.timerInterval = setInterval(() => {
+                updateBroadcasterStats();
+                updateBroadcasterData();
+            }, 1000);
+            
+            // Update UI
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('shareBtn').disabled = false;
+            document.getElementById('statusText').textContent = 'Live Broadcasting';
+            document.getElementById('statusDot').className = 'status-dot active';
+            
+            showToast(`Tracking ID: ${broadcasterData.trackingId}`, 4000);
+        }
+        
+        // Stop broadcasting
+        function stopBroadcasting() {
+            if (broadcasterData.watchId) {
+                navigator.geolocation.clearWatch(broadcasterData.watchId);
+                broadcasterData.watchId = null;
+            }
+            
+            if (broadcasterData.timerInterval) {
+                clearInterval(broadcasterData.timerInterval);
+                broadcasterData.timerInterval = null;
+            }
+            
+            broadcasterData.isActive = false;
+            
+            // Mark as inactive in storage
+            if (broadcasterData.trackingId) {
+                const data = getLocationData(broadcasterData.trackingId);
+                if (data) {
+                    data.isActive = false;
+                    saveLocationData(broadcasterData.trackingId, data);
+                }
+            }
+            
+            // Update UI
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('shareBtn').disabled = true;
+            document.getElementById('statusText').textContent = 'Broadcast Stopped';
+            document.getElementById('statusDot').className = 'status-dot';
+            
+            showToast('Broadcast stopped', 2000);
+        }
+        
+        // Share tracking ID
+        function shareTrackingId() {
+            if (!broadcasterData.trackingId) return;
+            
+            document.getElementById('trackingCode').textContent = broadcasterData.trackingId;
+            document.getElementById('shareModal').style.display = 'flex';
+        }
+        
+        // Close modal
+        function closeModal() {
+            document.getElementById('shareModal').style.display = 'none';
+        }
+        
+        // Update tracker display
+        function updateTrackerDisplay() {
+            if (!trackerData.isTracking || !trackerData.lastData) return;
+            
+            const data = trackerData.lastData;
+            const totalDist = updateTotalDistance(data.trackPoints || []);
+            const duration = data.startTime ? Math.floor((Date.now() - data.startTime) / 1000) : 0;
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = duration % 60;
+            
+            document.getElementById('trackedUser').textContent = data.trackingId || '-';
+            document.getElementById('trackedPoints').textContent = data.trackPoints?.length || 0;
+            document.getElementById('trackedDistance').textContent = totalDist.toFixed(2);
+            document.getElementById('trackedDuration').textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            if (data.lastUpdate) {
+                const lastUpdateTime = new Date(data.lastUpdate);
+                document.getElementById('lastUpdate').textContent = lastUpdateTime.toLocaleTimeString();
+            }
+            
+            // Update map
+            if (data.trackPoints && data.trackPoints.length > 0) {
+                const lastPoint = data.trackPoints[data.trackPoints.length - 1];
+                
+                if (trackerData.currentMarker) {
+                    trackerData.currentMarker.remove();
+                }
+                
+                trackerData.currentMarker = L.marker([lastPoint.lat, lastPoint.lng], {
+                    icon: L.divIcon({
+                        html: `<div style="background-color: #ff4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                        iconSize: [16, 16]
+                    })
+                }).addTo(map);
+                
+                // Draw route
+                trackerData.routeLayer.clearLayers();
+                if (data.trackPoints.length > 1) {
+                    const latlngs = data.trackPoints.map(p => [p.lat, p.lng]);
+                    L.polyline(latlngs, { color: '#ff9800', weight: 4 }).addTo(trackerData.routeLayer);
+                }
+                
+                map.setView([lastPoint.lat, lastPoint.lng], Math.max(map.getZoom(), 12));
+                
+                // Show status
+                const statusText = data.isActive ? '🟢 Live' : '🔴 Offline';
+                document.getElementById('trackerStatus').innerHTML = `${statusText} - Last update: ${new Date(data.lastUpdate).toLocaleTimeString()}`;
+            }
+        }
+        
+        // Start tracking
+        function startTracking() {
+            const trackingId = document.getElementById('trackingIdInput').value.trim().toUpperCase();
+            
+            if (!trackingId) {
+                showToast('Please enter a Tracking ID', 2000);
+                return;
+            }
+            
+            trackerData.trackingId = trackingId;
+            trackerData.isTracking = true;
+            
+            // Clear previous data
+            trackerData.routeLayer.clearLayers();
+            if (trackerData.currentMarker) {
+                trackerData.currentMarker.remove();
+                trackerData.currentMarker = null;
+            }
+            
+            // Load initial data
+            const data = getLocationData(trackingId);
+            if (data) {
+                trackerData.lastData = data;
+                updateTrackerDisplay();
+                showToast(`Tracking ${trackingId}`, 2000);
+            } else {
+                showToast('No data found for this Tracking ID', 3000);
+                trackerData.isTracking = false;
+                return;
+            }
+            
+            // Set up auto-refresh
+            if (trackerData.updateInterval) {
+                clearInterval(trackerData.updateInterval);
+            }
+            
+            trackerData.updateInterval = setInterval(() => {
+                if (trackerData.isTracking && trackerData.trackingId) {
+                    const newData = getLocationData(trackerData.trackingId);
+                    if (newData) {
+                        trackerData.lastData = newData;
+                        updateTrackerDisplay();
+                    }
+                }
+            }, 3000); // Update every 3 seconds
+        }
+        
+        // Stop tracking
+        function stopTracking() {
+            if (trackerData.updateInterval) {
+                clearInterval(trackerData.updateInterval);
+                trackerData.updateInterval = null;
+            }
+            
+            trackerData.isTracking = false;
+            trackerData.trackingId = null;
+            trackerData.lastData = null;
+            
+            trackerData.routeLayer.clearLayers();
+            if (trackerData.currentMarker) {
+                trackerData.currentMarker.remove();
+                trackerData.currentMarker = null;
+            }
+            
+            document.getElementById('trackedUser').textContent = '-';
+            document.getElementById('trackedPoints').textContent = '0';
+            document.getElementById('trackedDistance').textContent = '0';
+            document.getElementById('trackedDuration').textContent = '00:00:00';
+            document.getElementById('lastUpdate').textContent = '-';
+            document.getElementById('trackerStatus').innerHTML = '';
+            
+            showToast('Tracking stopped', 2000);
+        }
+        
+        // Switch mode
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            if (mode === 'broadcaster') {
+                document.getElementById('broadcasterUI').style.display = 'block';
+                document.getElementById('trackerUI').style.display = 'none';
+                document.getElementById('broadcasterMode').classList.add('active');
+                document.getElementById('trackerMode').classList.remove('active');
+                
+                // Stop tracking if active
+                if (trackerData.isTracking) {
+                    stopTracking();
+                }
+                
+                // Re-initialize broadcaster map layers
+                if (broadcasterData.routeLayer) {
+                    broadcasterData.routeLayer.clearLayers();
+                }
+                if (broadcasterData.currentMarker) {
+                    broadcasterData.currentMarker.remove();
+                    broadcasterData.currentMarker = null;
+                }
+                
+                // Reload broadcaster data
+                if (broadcasterData.trackPoints.length > 0) {
+                    updateBroadcasterStats();
+                    // Redraw route
+                    if (broadcasterData.trackPoints.length > 1) {
+                        const latlngs = broadcasterData.trackPoints.map(p => [p.lat, p.lng]);
+                        L.polyline(latlngs, { color: '#4caf50', weight: 4 }).addTo(broadcasterData.routeLayer);
+                    }
+                    if (broadcasterData.trackPoints.length > 0) {
+                        const lastPoint = broadcasterData.trackPoints[broadcasterData.trackPoints.length - 1];
+                        broadcasterData.currentMarker = L.marker([lastPoint.lat, lastPoint.lng], {
+                            icon: L.divIcon({
+                                html: `<div style="background-color: #4caf50; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                iconSize: [16, 16]
+                            })
+                        }).addTo(map);
+                    }
+                }
+            } else {
+                document.getElementById('broadcasterUI').style.display = 'none';
+                document.getElementById('trackerUI').style.display = 'block';
+                document.getElementById('broadcasterMode').classList.remove('active');
+                document.getElementById('trackerMode').classList.add('active');
+                
+                // Clear broadcaster layers from map
+                if (broadcasterData.routeLayer) {
+                    broadcasterData.routeLayer.clearLayers();
+                }
+                if (broadcasterData.currentMarker) {
+                    broadcasterData.currentMarker.remove();
+                }
+                
+                // Clear tracker layers
+                trackerData.routeLayer.clearLayers();
+                if (trackerData.currentMarker) {
+                    trackerData.currentMarker.remove();
+                    trackerData.currentMarker = null;
+                }
+            }
+        }
+        
+        // Initialize event listeners
+        function init() {
+            initMap();
+            
+            // Mode switching
+            document.getElementById('broadcasterMode').addEventListener('click', () => switchMode('broadcaster'));
+            document.getElementById('trackerMode').addEventListener('click', () => switchMode('tracker'));
+            
+            // Broadcaster controls
+            document.getElementById('startBtn').addEventListener('click', startBroadcasting);
+            document.getElementById('stopBtn').addEventListener('click', stopBroadcasting);
+            document.getElementById('shareBtn').addEventListener('click', shareTrackingId);
+            
+            // Tracker controls
+            document.getElementById('trackBtn').addEventListener('click', startTracking);
+            
+            // Close modal on outside click
+            window.onclick = function(event) {
+                const modal = document.getElementById('shareModal');
+                if (event.target === modal) {
+                    closeModal();
+                }
+            };
+        }
+        
+        // Start the app
+        init();
+    </script>
+</body>
+</html>
