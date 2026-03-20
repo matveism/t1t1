@@ -87,6 +87,11 @@
             transform: scale(0.96);
         }
 
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .btn-primary {
             background: #2b6ef0;
         }
@@ -115,21 +120,24 @@
         }
 
         .view-id-panel {
-            background: #030617;
+            background: linear-gradient(135deg, #030617 0%, #0a0f2a 100%);
             border-radius: 28px;
             padding: 12px 18px;
             text-align: center;
+            border: 1px solid #2b6ef0;
         }
 
         .view-id {
             font-size: 1.4rem;
             font-weight: bold;
             background: #00000066;
-            padding: 6px 12px;
+            padding: 8px 12px;
             border-radius: 40px;
             letter-spacing: 1px;
             color: #7bc5ff;
             word-break: break-all;
+            font-family: monospace;
+            margin-top: 8px;
         }
 
         input {
@@ -140,7 +148,6 @@
             color: white;
             font-size: 0.9rem;
             width: 100%;
-            margin-top: 10px;
             outline: none;
         }
 
@@ -150,31 +157,26 @@
             align-items: center;
         }
 
-        .recording-hint {
-            font-size: 0.75rem;
-            color: #ffb347;
-            margin-top: 8px;
-        }
-
-        @media (max-width: 600px) {
-            button {
-                padding: 8px 14px;
-                font-size: 0.8rem;
-            }
-        }
-
-        .loading {
+        .loading-spinner {
             display: inline-block;
-            width: 12px;
-            height: 12px;
+            width: 14px;
+            height: 14px;
             border: 2px solid #fff;
             border-radius: 50%;
             border-top-color: transparent;
-            animation: spin 1s linear infinite;
+            animation: spin 0.6s linear infinite;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+
+        .success-badge {
+            color: #4ade80;
+        }
+
+        .error-badge {
+            color: #f87171;
         }
     </style>
 </head>
@@ -185,7 +187,7 @@
 
     <!-- Broadcaster Card -->
     <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
             <h3>📤 BROADCASTER</h3>
             <span id="camState" style="font-size:0.7rem; background:#00000055; padding:4px 10px; border-radius:20px;">⚪ idle</span>
         </div>
@@ -193,22 +195,27 @@
             <video id="localVideo" autoplay muted playsinline></video>
         </div>
         <div class="controls">
-            <button id="startCamBtn" class="btn-primary">📷 Start Camera</button>
-            <button id="stopCamBtn" class="btn-danger">⏹️ Stop Camera</button>
+            <button id="startCamBtn" class="btn-primary">📷 Start Camera & Broadcast</button>
+            <button id="stopCamBtn" class="btn-danger">⏹️ Stop Broadcast</button>
         </div>
-        <div class="status" id="broadcasterStatus">Camera off. Start to broadcast live.</div>
+        <div class="status" id="broadcasterStatus">💡 Click "Start Camera" to begin broadcasting</div>
     </div>
 
     <!-- View ID Panel -->
     <div class="view-id-panel">
-        <div>🔑 YOUR LIVE VIEW ID (share to viewers)</div>
-        <div class="view-id" id="viewIdDisplay">Waiting for connection...</div>
-        <div style="font-size:12px; margin-top:6px;">Viewers enter this ID in the field below</div>
+        <div>🔑 YOUR LIVE VIEW ID (share this with viewers)</div>
+        <div class="view-id" id="viewIdDisplay">
+            <span class="loading-spinner"></span> Loading...
+        </div>
+        <div style="font-size:12px; margin-top:8px;">
+            👥 Viewers: Enter this ID in the field below and click Watch
+        </div>
+        <button id="copyIdBtn" style="margin-top: 10px; background: #2d3a5e; padding: 6px 12px; font-size: 0.75rem;">📋 Copy ID</button>
     </div>
 
     <!-- Viewer card -->
     <div class="card">
-        <h3>👁️ WATCH & RECORD</h3>
+        <h3>👁️ WATCH & RECORD (Other Device)</h3>
         <div class="flex-row">
             <input type="text" id="remoteViewIdInput" placeholder="Enter View ID to watch" autocomplete="off">
             <button id="connectViewBtn" class="btn-primary">▶️ Watch</button>
@@ -221,54 +228,35 @@
             <button id="stopRecordBtn" class="btn-warning" disabled>⏹️ Stop & Upload</button>
         </div>
         <div id="recordStatus" class="status">⏺️ No active recording</div>
-        <div id="driveStatus" class="status">📁 Google Drive: not authenticated</div>
+        <div id="driveStatus" class="status">📁 Google Drive: Click below to authenticate</div>
         <button id="authDriveBtn" class="btn-primary" style="margin-top:6px; width:100%;">🔐 Authenticate Google Drive</button>
     </div>
     <div class="sub">⭐ Recording saves as WebM video to Google Drive | Works on Kiwi/Android 5+</div>
 </div>
 
-<!-- Load PeerJS library -->
-<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<!-- Load PeerJS from CDN with fallback -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
 <script type="text/javascript">
-    // Wait for PeerJS to load
-    let PeerJS = null;
-    
-    // Check if PeerJS is available
-    function waitForPeerJS() {
-        return new Promise((resolve) => {
-            if (typeof Peer !== 'undefined') {
-                resolve();
-                return;
-            }
-            const checkInterval = setInterval(() => {
-                if (typeof Peer !== 'undefined') {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
-        });
-    }
-
-    // Global variables
+    // Wait for DOM and PeerJS
+    let peerInitialized = false;
     let peer = null;
     let localStream = null;
-    let call = null;
-    let isBroadcasting = false;
+    let activeCall = null;
     let currentViewId = "";
     
     // Viewer side
     let viewerPeer = null;
-    let mediaConnection = null;
-    let remoteStream = null;
+    let viewerConnection = null;
+    let remoteStreamActive = null;
     
-    // Recording variables
+    // Recording
     let mediaRecorder = null;
     let recordedChunks = [];
     let isRecording = false;
     
     // Google Drive
     let accessToken = null;
-    let gapiLoaded = false;
+    let gapiReady = false;
     let tokenClient = null;
     
     const CLIENT_ID = '1094371849962-3h5mhi6k63l8g9m7qpv8b9i2hq8c6tv4.apps.googleusercontent.com';
@@ -288,7 +276,9 @@
     const driveStatusSpan = document.getElementById('driveStatus');
     const authDriveBtn = document.getElementById('authDriveBtn');
     const broadcasterStatus = document.getElementById('broadcasterStatus');
-    const remoteVideoElement = document.getElementById('remoteVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const copyIdBtn = document.getElementById('copyIdBtn');
+    const camStateSpan = document.getElementById('camState');
     
     function updateStatus(elem, msg, isError = false) {
         elem.innerHTML = msg;
@@ -296,92 +286,120 @@
     }
     
     // Initialize Broadcaster Peer
-    async function initBroadcasterPeer() {
-        if (peer) {
-            peer.destroy();
-        }
-        
-        try {
-            peer = new Peer({
-                config: { 
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ] 
-                },
-                debug: 2
-            });
+    function initBroadcasterPeer() {
+        return new Promise((resolve, reject) => {
+            if (peer && !peer.destroyed) {
+                resolve(peer);
+                return;
+            }
             
-            peer.on('open', (id) => {
-                currentViewId = id;
-                viewIdDisplay.innerText = id;
-                updateStatus(broadcasterStatus, `✅ Ready! View ID: ${id}`, false);
+            try {
+                peer = new Peer({
+                    config: { 
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ] 
+                    },
+                    debug: 0
+                });
                 
-                // Set up call handler
+                peer.on('open', (id) => {
+                    console.log('Broadcaster peer opened with ID:', id);
+                    currentViewId = id;
+                    viewIdDisplay.innerHTML = id;
+                    updateStatus(broadcasterStatus, "✅ Broadcast peer ready! Start camera to go live.", false);
+                    peerInitialized = true;
+                    resolve(peer);
+                });
+                
                 peer.on('call', (incomingCall) => {
+                    console.log('Incoming call from viewer');
                     if (localStream) {
                         incomingCall.answer(localStream);
-                        call = incomingCall;
-                        call.on('stream', (stream) => {
-                            console.log("Viewer connected");
+                        activeCall = incomingCall;
+                        activeCall.on('stream', (stream) => {
+                            console.log('Viewer connected and receiving stream');
+                            updateStatus(broadcasterStatus, "📹 Viewer is watching your stream!", false);
                         });
-                        updateStatus(broadcasterStatus, `📹 Viewer connected!`, false);
+                        activeCall.on('close', () => {
+                            updateStatus(broadcasterStatus, "📹 Viewer disconnected", false);
+                        });
                     } else {
+                        console.log('No local stream to answer call');
                         incomingCall.close();
                     }
                 });
-            });
-            
-            peer.on('error', (err) => {
-                console.error("Peer error:", err);
-                updateStatus(broadcasterStatus, `⚠️ Error: ${err.type || err.message}`, true);
-            });
-            
-            peer.on('disconnected', () => {
-                console.log("Peer disconnected");
-                updateStatus(broadcasterStatus, "⚠️ Disconnected, reconnecting...", true);
-                peer.reconnect();
-            });
-            
-        } catch (err) {
-            console.error("Failed to create peer:", err);
-            updateStatus(broadcasterStatus, `Failed: ${err.message}`, true);
-        }
+                
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
+                        // Retry with new ID
+                        setTimeout(() => initBroadcasterPeer(), 1000);
+                    } else {
+                        updateStatus(broadcasterStatus, `⚠️ Error: ${err.type}`, true);
+                    }
+                    reject(err);
+                });
+                
+                peer.on('disconnected', () => {
+                    console.log('Peer disconnected, reconnecting...');
+                    updateStatus(broadcasterStatus, "⚠️ Reconnecting...", true);
+                    if (peer && !peer.destroyed) {
+                        peer.reconnect();
+                    }
+                });
+                
+            } catch (err) {
+                console.error('Failed to create peer:', err);
+                reject(err);
+            }
+        });
     }
     
     // Initialize Viewer Peer
     function initViewerPeer() {
-        if (viewerPeer) {
-            viewerPeer.destroy();
-        }
-        
-        try {
-            viewerPeer = new Peer({
-                config: { 
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ] 
-                }
-            });
+        return new Promise((resolve, reject) => {
+            if (viewerPeer && !viewerPeer.destroyed) {
+                resolve(viewerPeer);
+                return;
+            }
             
-            viewerPeer.on('open', (id) => {
-                console.log("Viewer peer ready:", id);
-            });
-            
-            viewerPeer.on('error', (err) => {
-                console.warn("Viewer peer error:", err);
-            });
-        } catch (err) {
-            console.error("Failed to create viewer peer:", err);
-        }
+            try {
+                viewerPeer = new Peer({
+                    config: { 
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' }
+                        ] 
+                    }
+                });
+                
+                viewerPeer.on('open', (id) => {
+                    console.log('Viewer peer ready:', id);
+                    resolve(viewerPeer);
+                });
+                
+                viewerPeer.on('error', (err) => {
+                    console.error('Viewer peer error:', err);
+                    reject(err);
+                });
+                
+            } catch (err) {
+                console.error('Failed to create viewer peer:', err);
+                reject(err);
+            }
+        });
     }
     
-    // Start camera
-    async function startCamera() {
+    // Start camera and broadcast
+    async function startCameraAndBroadcast() {
         if (localStream) {
-            stopCameraTracks();
+            stopBroadcast();
         }
+        
+        updateStatus(broadcasterStatus, "📷 Requesting camera access...", false);
         
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -395,100 +413,107 @@
             
             localStream = stream;
             localVideo.srcObject = stream;
-            isBroadcasting = true;
-            updateStatus(broadcasterStatus, "📹 Camera ON - Live stream active", false);
-            document.getElementById('camState').innerHTML = "🟢 LIVE";
+            camStateSpan.innerHTML = "🟢 LIVE";
+            updateStatus(broadcasterStatus, "✅ Camera active! Your stream is now live.", false);
             
-            // Reinitialize peer if needed
+            // Initialize peer if not already
             if (!peer || peer.destroyed) {
                 await initBroadcasterPeer();
             }
             
+            // Update status
+            if (currentViewId) {
+                updateStatus(broadcasterStatus, `📹 Broadcasting LIVE! View ID: ${currentViewId}`, false);
+            }
+            
         } catch(e) {
-            console.error("Camera error:", e);
-            updateStatus(broadcasterStatus, `❌ Camera error: ${e.message}`, true);
+            console.error('Camera error:', e);
+            let errorMsg = "❌ Camera access denied or unavailable";
+            if (e.name === 'NotAllowedError') errorMsg = "❌ Camera permission denied. Please allow camera access.";
+            if (e.name === 'NotFoundError') errorMsg = "❌ No camera found on this device.";
+            updateStatus(broadcasterStatus, errorMsg, true);
+            camStateSpan.innerHTML = "⚠️ error";
         }
     }
     
-    function stopCameraTracks() {
+    function stopBroadcast() {
         if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
             localStream = null;
             localVideo.srcObject = null;
-            isBroadcasting = false;
-            document.getElementById('camState').innerHTML = "⚪ idle";
-            updateStatus(broadcasterStatus, "Camera stopped. Broadcast offline.", false);
+            camStateSpan.innerHTML = "⚪ idle";
+            updateStatus(broadcasterStatus, "Broadcast stopped. Click 'Start Camera' to go live.", false);
             
-            if (call) {
-                call.close();
-                call = null;
+            if (activeCall) {
+                activeCall.close();
+                activeCall = null;
             }
         }
     }
     
-    // Connect to broadcaster
+    // Connect to broadcaster as viewer
     async function connectToBroadcaster(viewId) {
         if (!viewId || viewId.trim() === "") {
-            alert("Please enter a valid View ID");
+            alert("Please enter a View ID");
             return;
         }
         
-        if (!viewerPeer || viewerPeer.destroyed) {
-            initViewerPeer();
-            // Wait a bit for peer to initialize
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        
-        if (mediaConnection) {
-            mediaConnection.close();
-            mediaConnection = null;
-        }
-        
-        remoteVideoElement.srcObject = null;
-        remoteStream = null;
-        activeRemoteStreamForRecord = null;
-        
-        updateStatus(recordStatusSpan, "⏳ Connecting to broadcaster...", false);
+        viewId = viewId.trim();
+        updateStatus(recordStatusSpan, `⏳ Connecting to ${viewId}...`, false);
         
         try {
-            const callObj = viewerPeer.call(viewId.trim(), null);
-            mediaConnection = callObj;
+            if (!viewerPeer || viewerPeer.destroyed) {
+                await initViewerPeer();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
             
-            callObj.on('stream', (remoteStreamObj) => {
-                remoteVideoElement.srcObject = remoteStreamObj;
-                remoteStream = remoteStreamObj;
-                window.activeRemoteStreamForRecord = remoteStreamObj;
-                updateStatus(recordStatusSpan, "✅ Live stream connected!", false);
+            if (viewerConnection) {
+                viewerConnection.close();
+                viewerConnection = null;
+            }
+            
+            remoteVideo.srcObject = null;
+            remoteStreamActive = null;
+            
+            const call = viewerPeer.call(viewId, null);
+            viewerConnection = call;
+            
+            call.on('stream', (remoteStream) => {
+                console.log('Received remote stream');
+                remoteVideo.srcObject = remoteStream;
+                remoteStreamActive = remoteStream;
+                window.currentRemoteStream = remoteStream;
+                updateStatus(recordStatusSpan, "✅ Connected! Live stream playing.", false);
                 startRecordBtn.disabled = false;
-                stopRecordBtn.disabled = true;
             });
             
-            callObj.on('close', () => {
-                remoteVideoElement.srcObject = null;
-                remoteStream = null;
-                window.activeRemoteStreamForRecord = null;
+            call.on('close', () => {
+                console.log('Stream closed');
+                remoteVideo.srcObject = null;
+                remoteStreamActive = null;
+                window.currentRemoteStream = null;
                 updateStatus(recordStatusSpan, "❌ Stream disconnected", true);
                 startRecordBtn.disabled = true;
                 stopRecordBtn.disabled = true;
                 isRecording = false;
             });
             
-            callObj.on('error', (err) => {
-                console.error("Call error:", err);
-                updateStatus(recordStatusSpan, `Call failed: ${err.message || err.type}`, true);
+            call.on('error', (err) => {
+                console.error('Call error:', err);
+                updateStatus(recordStatusSpan, `❌ Connection failed: ${err.message || err.type}`, true);
                 startRecordBtn.disabled = true;
             });
             
         } catch (err) {
-            console.error("Connection error:", err);
-            updateStatus(recordStatusSpan, `Connection failed: ${err.message}`, true);
+            console.error('Connection error:', err);
+            updateStatus(recordStatusSpan, `❌ Failed to connect: ${err.message}`, true);
         }
     }
     
     // Recording functions
     function startRecording() {
-        if (!window.activeRemoteStreamForRecord) {
-            alert("No active stream to record. Connect to a broadcaster first.");
+        if (!window.currentRemoteStream) {
+            alert("No active stream. Connect to a broadcaster first.");
             return;
         }
         
@@ -501,7 +526,7 @@
         
         try {
             const options = { mimeType: 'video/webm' };
-            mediaRecorder = new MediaRecorder(window.activeRemoteStreamForRecord, options);
+            mediaRecorder = new MediaRecorder(window.currentRemoteStream, options);
             
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data && event.data.size > 0) {
@@ -523,11 +548,11 @@
             isRecording = true;
             startRecordBtn.disabled = true;
             stopRecordBtn.disabled = false;
-            updateStatus(recordStatusSpan, "🔴 RECORDING... Stop when done", false);
+            updateStatus(recordStatusSpan, "🔴 RECORDING... Click Stop when done", false);
             
         } catch(err) {
-            console.error("Record error:", err);
-            updateStatus(recordStatusSpan, `Record error: ${err.message}`, true);
+            console.error('Record error:', err);
+            updateStatus(recordStatusSpan, `❌ Record error: ${err.message}`, true);
         }
     }
     
@@ -541,28 +566,34 @@
     }
     
     // Google Drive functions
-    function loadGapiScript() {
+    function loadGoogleAPIs() {
         return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = "https://apis.google.com/js/api.js";
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
+            const script1 = document.createElement('script');
+            script1.src = "https://apis.google.com/js/api.js";
+            script1.onload = () => {
+                const script2 = document.createElement('script');
+                script2.src = "https://accounts.google.com/gsi/client";
+                script2.onload = resolve;
+                script2.onerror = reject;
+                document.head.appendChild(script2);
+            };
+            script1.onerror = reject;
+            document.head.appendChild(script1);
         });
     }
     
     async function initGapi() {
-        if (gapiLoaded) return;
+        if (gapiReady) return;
         
         try {
-            await loadGapiScript();
+            await loadGoogleAPIs();
             await new Promise((resolve) => gapi.load('client', resolve));
             await gapi.client.init({ 
                 apiKey: API_KEY, 
                 discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] 
             });
-            gapiLoaded = true;
-            updateStatus(driveStatusSpan, "✅ Drive API ready. Click auth to login.", false);
+            gapiReady = true;
+            updateStatus(driveStatusSpan, "✅ Drive API ready", false);
         } catch (err) {
             console.error("GAPI init error:", err);
             updateStatus(driveStatusSpan, "⚠️ Drive API failed to load", true);
@@ -571,7 +602,8 @@
     
     function initTokenClient() {
         if (typeof google === 'undefined' || !google.accounts) {
-            updateStatus(driveStatusSpan, "⚠️ Google auth not loaded", true);
+            updateStatus(driveStatusSpan, "⚠️ Loading Google auth...", false);
+            setTimeout(initTokenClient, 500);
             return;
         }
         
@@ -582,27 +614,28 @@
                 if (tokenResponse.access_token) {
                     accessToken = tokenResponse.access_token;
                     gapi.client.setToken({ access_token: accessToken });
-                    updateStatus(driveStatusSpan, "✅ Google Drive authenticated!", false);
+                    updateStatus(driveStatusSpan, "✅ Google Drive authenticated! Ready to save recordings.", false);
                 } else {
-                    updateStatus(driveStatusSpan, "❌ Auth failed", true);
+                    updateStatus(driveStatusSpan, "❌ Authentication failed", true);
                 }
             },
         });
     }
     
     async function authenticateDrive() {
-        if (!gapiLoaded) {
+        if (!gapiReady) {
             await initGapi();
         }
         
         if (!tokenClient) {
             initTokenClient();
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
         
         if (tokenClient) {
             tokenClient.requestAccessToken({ prompt: 'consent' });
         } else {
-            alert("Authentication not ready. Please refresh and try again.");
+            alert("Authentication not ready. Please try again.");
         }
     }
     
@@ -610,7 +643,7 @@
         const fileName = `Broadcast_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
         
         if (!accessToken) {
-            // Fallback: download locally
+            // Fallback download
             updateStatus(driveStatusSpan, "⚠️ Not authenticated - downloading locally", true);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -623,11 +656,7 @@
         }
         
         try {
-            const metadata = {
-                name: fileName,
-                parents: ['root']
-            };
-            
+            const metadata = { name: fileName, parents: ['root'] };
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', blob);
@@ -648,55 +677,64 @@
             }
         } catch(e) {
             console.error("Upload error:", e);
-            updateStatus(recordStatusSpan, `Upload failed: ${e.message}`, true);
-            // Fallback download
+            updateStatus(recordStatusSpan, `⚠️ Upload failed, saving locally`, true);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = fileName;
             a.click();
             URL.revokeObjectURL(url);
-            updateStatus(recordStatusSpan, "📁 Saved locally as fallback", false);
+        }
+    }
+    
+    // Copy ID to clipboard
+    function copyViewId() {
+        if (currentViewId) {
+            navigator.clipboard.writeText(currentViewId).then(() => {
+                const originalText = copyIdBtn.innerHTML;
+                copyIdBtn.innerHTML = "✅ Copied!";
+                setTimeout(() => { copyIdBtn.innerHTML = originalText; }, 2000);
+            }).catch(() => {
+                alert("View ID: " + currentViewId);
+            });
+        } else {
+            alert("Waiting for View ID to load...");
         }
     }
     
     // Event listeners
-    startCamBtn.onclick = startCamera;
-    stopCamBtn.onclick = stopCameraTracks;
+    startCamBtn.onclick = startCameraAndBroadcast;
+    stopCamBtn.onclick = stopBroadcast;
     connectViewBtn.onclick = () => connectToBroadcaster(remoteViewIdInput.value);
     startRecordBtn.onclick = startRecording;
     stopRecordBtn.onclick = stopRecording;
     authDriveBtn.onclick = authenticateDrive;
+    copyIdBtn.onclick = copyViewId;
     
-    // Initialize everything when PeerJS is ready
-    async function initialize() {
-        await waitForPeerJS();
-        console.log("PeerJS loaded successfully");
+    // Initialize
+    async function init() {
+        updateStatus(broadcasterStatus, "🔄 Initializing broadcast system...", false);
         await initBroadcasterPeer();
-        initViewerPeer();
+        await initViewerPeer();
         await initGapi();
         initTokenClient();
         updateStatus(driveStatusSpan, "🔑 Click 'Authenticate Google Drive' to enable uploads", false);
     }
     
-    initialize();
+    init();
     
     // Cleanup
     window.addEventListener('beforeunload', () => {
-        if (localStream) stopCameraTracks();
-        if (peer) peer.destroy();
-        if (viewerPeer) viewerPeer.destroy();
+        if (localStream) stopBroadcast();
+        if (peer && !peer.destroyed) peer.destroy();
+        if (viewerPeer && !viewerPeer.destroyed) viewerPeer.destroy();
         if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
     });
     
-    // Autoplay support for mobile
-    remoteVideoElement.addEventListener('loadedmetadata', () => {
-        remoteVideoElement.play().catch(e => console.log("Autoplay blocked:", e));
-    });
-    localVideo.addEventListener('loadedmetadata', () => {
-        localVideo.play().catch(e => console.log("Local autoplay:", e));
+    // Handle autoplay
+    remoteVideo.addEventListener('loadedmetadata', () => {
+        remoteVideo.play().catch(e => console.log("Autoplay blocked, user interaction needed"));
     });
 </script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
