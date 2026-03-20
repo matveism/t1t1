@@ -7,7 +7,6 @@
     <style>
         * {
             box-sizing: border-box;
-            user-select: none; /* Better touch on kiwi */
         }
 
         body {
@@ -28,7 +27,6 @@
             text-align: center;
             margin: 0 0 8px 0;
             font-weight: 500;
-            letter-spacing: -0.3px;
         }
 
         .sub {
@@ -39,12 +37,10 @@
         }
 
         .card {
-            background: rgba(18, 25, 45, 0.8);
-            backdrop-filter: blur(2px);
+            background: rgba(18, 25, 45, 0.95);
             border-radius: 28px;
             padding: 18px;
             margin-bottom: 20px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
             border: 1px solid rgba(72, 187, 255, 0.2);
         }
 
@@ -55,7 +51,6 @@
             overflow: hidden;
             aspect-ratio: 16 / 9;
             margin-bottom: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
 
         video {
@@ -83,11 +78,9 @@
             font-size: 0.9rem;
             cursor: pointer;
             transition: 0.2s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            backdrop-filter: blur(4px);
         }
 
         button:active {
@@ -96,7 +89,6 @@
 
         .btn-primary {
             background: #2b6ef0;
-            box-shadow: 0 0 8px rgba(43, 110, 240, 0.6);
         }
 
         .btn-danger {
@@ -119,7 +111,6 @@
             font-size: 0.8rem;
             text-align: center;
             margin-top: 12px;
-            font-family: monospace;
             word-break: break-all;
         }
 
@@ -138,6 +129,7 @@
             border-radius: 40px;
             letter-spacing: 1px;
             color: #7bc5ff;
+            word-break: break-all;
         }
 
         input {
@@ -158,14 +150,10 @@
             align-items: center;
         }
 
-        hr {
-            border-color: #2d3a5e;
-            margin: 12px 0;
-        }
-
         .recording-hint {
             font-size: 0.75rem;
             color: #ffb347;
+            margin-top: 8px;
         }
 
         @media (max-width: 600px) {
@@ -174,6 +162,20 @@
                 font-size: 0.8rem;
             }
         }
+
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -181,10 +183,10 @@
     <h1>📡 Live Broadcast + Drive Recorder</h1>
     <div class="sub">View live camera from any device | Record & save to Google Drive</div>
 
-    <!-- Broadcaster Card (Camera sender) -->
+    <!-- Broadcaster Card -->
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: baseline;">
-            <h3>📤 BROADCASTER (this device)</h3>
+            <h3>📤 BROADCASTER</h3>
             <span id="camState" style="font-size:0.7rem; background:#00000055; padding:4px 10px; border-radius:20px;">⚪ idle</span>
         </div>
         <div class="video-box">
@@ -195,21 +197,20 @@
             <button id="stopCamBtn" class="btn-danger">⏹️ Stop Camera</button>
         </div>
         <div class="status" id="broadcasterStatus">Camera off. Start to broadcast live.</div>
-        <div class="recording-hint" style="margin-top:8px;">✅ When camera is ON, the stream is PUBLIC via your View ID</div>
     </div>
 
-    <!-- View ID Panel : unique identifier -->
+    <!-- View ID Panel -->
     <div class="view-id-panel">
         <div>🔑 YOUR LIVE VIEW ID (share to viewers)</div>
-        <div class="view-id" id="viewIdDisplay">loading...</div>
-        <div style="font-size:12px; margin-top:6px;">Viewers open this page & enter ID below → Watch live & record</div>
+        <div class="view-id" id="viewIdDisplay">Waiting for connection...</div>
+        <div style="font-size:12px; margin-top:6px;">Viewers enter this ID in the field below</div>
     </div>
 
-    <!-- Viewer card (watch & record from other device) -->
+    <!-- Viewer card -->
     <div class="card">
-        <h3>👁️ WATCH & RECORD (other device)</h3>
+        <h3>👁️ WATCH & RECORD</h3>
         <div class="flex-row">
-            <input type="text" id="remoteViewIdInput" placeholder="Enter View ID to watch live stream" autocomplete="off">
+            <input type="text" id="remoteViewIdInput" placeholder="Enter View ID to watch" autocomplete="off">
             <button id="connectViewBtn" class="btn-primary">▶️ Watch</button>
         </div>
         <div class="video-box" style="margin-top:12px;">
@@ -220,50 +221,58 @@
             <button id="stopRecordBtn" class="btn-warning" disabled>⏹️ Stop & Upload</button>
         </div>
         <div id="recordStatus" class="status">⏺️ No active recording</div>
-        <div id="driveStatus" class="status" style="background:#0c1126;">📁 Google Drive: not authenticated</div>
+        <div id="driveStatus" class="status">📁 Google Drive: not authenticated</div>
         <button id="authDriveBtn" class="btn-primary" style="margin-top:6px; width:100%;">🔐 Authenticate Google Drive</button>
     </div>
-    <div class="sub">⭐ Recording saves as WebM video to your Google Drive root folder. Works on Kiwi / Android 5+</div>
+    <div class="sub">⭐ Recording saves as WebM video to Google Drive | Works on Kiwi/Android 5+</div>
 </div>
 
+<!-- Load PeerJS library -->
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <script type="text/javascript">
-    // ---------- GLOBAL SIGNALING (simple WebRTC with STUN only, using BroadcastChannel / PeerConnection? 
-    // We'll implement live streaming via WebRTC + Signaling using localStorage + BroadcastChannel? Not cross-device.
-    // Better: Use simple WebSocket? But we need 0 backend? Not possible without server. For truly cross-device, we need a signaling server.
-    // However we can use Firebase? No external keys? But requirement: "create video broadcast that i can see real video from other device camera" 
-    // and "generate view id that can view it too live". Must work without custom backend.
-    // SOLUTION: Use PeerJS (WebRTC) with free public PeerJS Cloud? That requires external library but works cross-device.
-    // PeerJS (peerjs.com) uses public signaling server. It's reliable, works on Android 5+ Kiwi. We'll integrate PeerJS CDN.
-    // Also Google Drive API via OAuth 2.0 client-side (with Drive API v3).
-    // All works in modern browser, Kiwi supports WebRTC, OAuth2 popup.
-    // ========== IMPLEMENTATION ==========
+    // Wait for PeerJS to load
+    let PeerJS = null;
     
-    // ------------------- PEERJS Setup --------------------
-    let peer = null;            // Peer instance for broadcaster
-    let localStream = null;     // local camera stream
-    let call = null;            // active call (incoming for viewer)
-    let remoteStream = null;    // remote video stream for viewer
+    // Check if PeerJS is available
+    function waitForPeerJS() {
+        return new Promise((resolve) => {
+            if (typeof Peer !== 'undefined') {
+                resolve();
+                return;
+            }
+            const checkInterval = setInterval(() => {
+                if (typeof Peer !== 'undefined') {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+        });
+    }
+
+    // Global variables
+    let peer = null;
+    let localStream = null;
+    let call = null;
     let isBroadcasting = false;
-    let currentViewId = "";     // unique id for this broadcaster (peer id)
+    let currentViewId = "";
     
-    // For viewer side
-    let viewerPeer = null;      // peer instance used by viewer to connect
-    let activeConnection = null; // media connection
-    let remoteVideoElement = document.getElementById('remoteVideo');
+    // Viewer side
+    let viewerPeer = null;
+    let mediaConnection = null;
+    let remoteStream = null;
     
     // Recording variables
     let mediaRecorder = null;
     let recordedChunks = [];
     let isRecording = false;
-    let activeRemoteStreamForRecord = null; // reference to remote stream (viewer)
     
-    // Google Drive API (OAuth2)
-    let gapiInited = false;
-    let tokenClient = null;
+    // Google Drive
     let accessToken = null;
-    let gapiReady = false;
-    const CLIENT_ID = '1094371849962-3h5mhi6k63l8g9m7qpv8b9i2hq8c6tv4.apps.googleusercontent.com';  // public demo client id (web app)
-    const API_KEY = 'AIzaSyCbpCzF6x5N0TtdNSmTZ7K6yUu_p7r5PvI';   // demo restricted key for drive API
+    let gapiLoaded = false;
+    let tokenClient = null;
+    
+    const CLIENT_ID = '1094371849962-3h5mhi6k63l8g9m7qpv8b9i2hq8c6tv4.apps.googleusercontent.com';
+    const API_KEY = 'AIzaSyCbpCzF6x5N0TtdNSmTZ7K6yUu_p7r5PvI';
     const SCOPES = 'https://www.googleapis.com/auth/drive.file';
     
     // DOM elements
@@ -279,337 +288,415 @@
     const driveStatusSpan = document.getElementById('driveStatus');
     const authDriveBtn = document.getElementById('authDriveBtn');
     const broadcasterStatus = document.getElementById('broadcasterStatus');
+    const remoteVideoElement = document.getElementById('remoteVideo');
     
-    // Helper log/status
     function updateStatus(elem, msg, isError = false) {
         elem.innerHTML = msg;
-        if(isError) elem.style.color = "#ffaaaa";
-        else elem.style.color = "#eef4ff";
+        elem.style.color = isError ? "#ffaaaa" : "#eef4ff";
     }
     
-    // ------------------- PEERJS INITIALIZATION -------------------
-    function initPeerForBroadcast() {
-        if(peer) {
+    // Initialize Broadcaster Peer
+    async function initBroadcasterPeer() {
+        if (peer) {
             peer.destroy();
         }
-        peer = new Peer({ 
-            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-        });
-        peer.on('open', (id) => {
-            currentViewId = id;
-            viewIdDisplay.innerText = id;
-            updateStatus(broadcasterStatus, `✅ Broadcast ready! View ID: ${id}. Share this ID.`, false);
-            if(localStream && isBroadcasting) {
-                // if camera already on, we need to answer calls? Actually broadcaster doesn't answer, viewers call broadcaster.
-                // But viewers call this peer id. Ensure we handle incoming connections from viewers.
+        
+        try {
+            peer = new Peer({
+                config: { 
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ] 
+                },
+                debug: 2
+            });
+            
+            peer.on('open', (id) => {
+                currentViewId = id;
+                viewIdDisplay.innerText = id;
+                updateStatus(broadcasterStatus, `✅ Ready! View ID: ${id}`, false);
+                
+                // Set up call handler
                 peer.on('call', (incomingCall) => {
-                    if(localStream) {
+                    if (localStream) {
                         incomingCall.answer(localStream);
                         call = incomingCall;
-                        call.on('stream', (remoteStream) => {
-                            // broadcaster can see viewer? but not needed, but we ignore.
-                            console.log("Broadcaster: viewer connected");
+                        call.on('stream', (stream) => {
+                            console.log("Viewer connected");
                         });
-                        call.on('close', () => { console.log("Viewer disconnected"); });
+                        updateStatus(broadcasterStatus, `📹 Viewer connected!`, false);
                     } else {
                         incomingCall.close();
                     }
                 });
-            }
-        });
-        peer.on('error', (err) => {
-            console.error("Peer error:", err);
-            updateStatus(broadcasterStatus, `⚠️ Peer error: ${err.type}`, true);
-        });
+            });
+            
+            peer.on('error', (err) => {
+                console.error("Peer error:", err);
+                updateStatus(broadcasterStatus, `⚠️ Error: ${err.type || err.message}`, true);
+            });
+            
+            peer.on('disconnected', () => {
+                console.log("Peer disconnected");
+                updateStatus(broadcasterStatus, "⚠️ Disconnected, reconnecting...", true);
+                peer.reconnect();
+            });
+            
+        } catch (err) {
+            console.error("Failed to create peer:", err);
+            updateStatus(broadcasterStatus, `Failed: ${err.message}`, true);
+        }
     }
     
-    // Camera start for broadcaster
+    // Initialize Viewer Peer
+    function initViewerPeer() {
+        if (viewerPeer) {
+            viewerPeer.destroy();
+        }
+        
+        try {
+            viewerPeer = new Peer({
+                config: { 
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ] 
+                }
+            });
+            
+            viewerPeer.on('open', (id) => {
+                console.log("Viewer peer ready:", id);
+            });
+            
+            viewerPeer.on('error', (err) => {
+                console.warn("Viewer peer error:", err);
+            });
+        } catch (err) {
+            console.error("Failed to create viewer peer:", err);
+        }
+    }
+    
+    // Start camera
     async function startCamera() {
-        if(localStream) {
+        if (localStream) {
             stopCameraTracks();
         }
+        
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user'
+                }, 
+                audio: true 
+            });
+            
             localStream = stream;
             localVideo.srcObject = stream;
             isBroadcasting = true;
-            updateStatus(broadcasterStatus, "📹 Camera ON: stream live. Viewers can call using View ID.", false);
+            updateStatus(broadcasterStatus, "📹 Camera ON - Live stream active", false);
             document.getElementById('camState').innerHTML = "🟢 LIVE";
-            // ensure peer is ready and handle calls
-            if(!peer || peer.destroyed) {
-                initPeerForBroadcast();
-            } else {
-                // set up call handler again if needed
-                peer.removeAllListeners('call');
-                peer.on('call', (incomingCall) => {
-                    if(localStream) {
-                        incomingCall.answer(localStream);
-                        call = incomingCall;
-                        call.on('stream', (stream) => {});
-                    } else {
-                        incomingCall.close();
-                    }
-                });
+            
+            // Reinitialize peer if needed
+            if (!peer || peer.destroyed) {
+                await initBroadcasterPeer();
             }
+            
         } catch(e) {
+            console.error("Camera error:", e);
             updateStatus(broadcasterStatus, `❌ Camera error: ${e.message}`, true);
-            console.error(e);
         }
     }
     
     function stopCameraTracks() {
-        if(localStream) {
+        if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
             localStream = null;
             localVideo.srcObject = null;
             isBroadcasting = false;
             document.getElementById('camState').innerHTML = "⚪ idle";
             updateStatus(broadcasterStatus, "Camera stopped. Broadcast offline.", false);
-            if(call) {
+            
+            if (call) {
                 call.close();
                 call = null;
             }
         }
     }
     
-    // Viewer side: connect to broadcaster peer id
-    let viewerPeerInstance = null;
-    let mediaConnection = null;
-    
-    function initViewerPeer() {
-        if(viewerPeerInstance) {
-            viewerPeerInstance.destroy();
-        }
-        viewerPeerInstance = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
-        viewerPeerInstance.on('open', (id) => {
-            console.log("Viewer peer ready:", id);
-        });
-        viewerPeerInstance.on('error', (err) => console.warn("Viewer peer error", err));
-    }
-    
+    // Connect to broadcaster
     async function connectToBroadcaster(viewId) {
-        if(!viewId || viewId.trim() === "") {
-            alert("Please enter valid View ID");
+        if (!viewId || viewId.trim() === "") {
+            alert("Please enter a valid View ID");
             return;
         }
-        if(!viewerPeerInstance || viewerPeerInstance.destroyed) {
+        
+        if (!viewerPeer || viewerPeer.destroyed) {
             initViewerPeer();
+            // Wait a bit for peer to initialize
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
-        // ensure any previous connection closed
-        if(mediaConnection) {
+        
+        if (mediaConnection) {
             mediaConnection.close();
             mediaConnection = null;
         }
+        
         remoteVideoElement.srcObject = null;
+        remoteStream = null;
         activeRemoteStreamForRecord = null;
-        // call broadcaster
-        const callObj = viewerPeerInstance.call(viewId.trim(), null); // we don't send stream (just receive)
-        mediaConnection = callObj;
-        callObj.on('stream', (remoteStreamObj) => {
-            remoteVideoElement.srcObject = remoteStreamObj;
-            activeRemoteStreamForRecord = remoteStreamObj;
-            updateStatus(recordStatusSpan, "✅ Live stream connected. Ready to record.", false);
-            startRecordBtn.disabled = false;
-            stopRecordBtn.disabled = true;
-        });
-        callObj.on('close', () => {
-            remoteVideoElement.srcObject = null;
-            activeRemoteStreamForRecord = null;
-            updateStatus(recordStatusSpan, "❌ Stream disconnected", true);
-            startRecordBtn.disabled = true;
-            stopRecordBtn.disabled = true;
-        });
-        callObj.on('error', (err) => {
-            console.error("Call error", err);
-            updateStatus(recordStatusSpan, `Call failed: ${err.message}`, true);
-            startRecordBtn.disabled = true;
-        });
+        
+        updateStatus(recordStatusSpan, "⏳ Connecting to broadcaster...", false);
+        
+        try {
+            const callObj = viewerPeer.call(viewId.trim(), null);
+            mediaConnection = callObj;
+            
+            callObj.on('stream', (remoteStreamObj) => {
+                remoteVideoElement.srcObject = remoteStreamObj;
+                remoteStream = remoteStreamObj;
+                window.activeRemoteStreamForRecord = remoteStreamObj;
+                updateStatus(recordStatusSpan, "✅ Live stream connected!", false);
+                startRecordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
+            });
+            
+            callObj.on('close', () => {
+                remoteVideoElement.srcObject = null;
+                remoteStream = null;
+                window.activeRemoteStreamForRecord = null;
+                updateStatus(recordStatusSpan, "❌ Stream disconnected", true);
+                startRecordBtn.disabled = true;
+                stopRecordBtn.disabled = true;
+                isRecording = false;
+            });
+            
+            callObj.on('error', (err) => {
+                console.error("Call error:", err);
+                updateStatus(recordStatusSpan, `Call failed: ${err.message || err.type}`, true);
+                startRecordBtn.disabled = true;
+            });
+            
+        } catch (err) {
+            console.error("Connection error:", err);
+            updateStatus(recordStatusSpan, `Connection failed: ${err.message}`, true);
+        }
     }
     
-    // ---------- RECORDING via MediaRecorder (from remote stream) ----------
+    // Recording functions
     function startRecording() {
-        if(!activeRemoteStreamForRecord) {
+        if (!window.activeRemoteStreamForRecord) {
             alert("No active stream to record. Connect to a broadcaster first.");
             return;
         }
-        if(isRecording) {
+        
+        if (isRecording) {
             alert("Already recording");
             return;
         }
+        
         recordedChunks = [];
+        
         try {
-            const options = { mimeType: 'video/webm;codecs=vp9' };
-            mediaRecorder = new MediaRecorder(activeRemoteStreamForRecord, options);
+            const options = { mimeType: 'video/webm' };
+            mediaRecorder = new MediaRecorder(window.activeRemoteStreamForRecord, options);
+            
             mediaRecorder.ondataavailable = (event) => {
-                if(event.data && event.data.size > 0) recordedChunks.push(event.data);
+                if (event.data && event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
             };
+            
             mediaRecorder.onstop = () => {
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
                 recordedChunks = [];
                 isRecording = false;
-                updateStatus(recordStatusSpan, "⏳ Recording finished. Uploading to Google Drive...", false);
+                updateStatus(recordStatusSpan, "⏳ Processing recording...", false);
                 uploadToGoogleDrive(blob);
+                startRecordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
             };
+            
             mediaRecorder.start(1000);
             isRecording = true;
             startRecordBtn.disabled = true;
             stopRecordBtn.disabled = false;
-            updateStatus(recordStatusSpan, "🔴 RECORDING in progress... Stop to upload.", false);
+            updateStatus(recordStatusSpan, "🔴 RECORDING... Stop when done", false);
+            
         } catch(err) {
-            console.error(err);
+            console.error("Record error:", err);
             updateStatus(recordStatusSpan, `Record error: ${err.message}`, true);
         }
     }
     
     function stopRecording() {
-        if(mediaRecorder && isRecording && mediaRecorder.state === "recording") {
+        if (mediaRecorder && isRecording && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
+            updateStatus(recordStatusSpan, "⏹️ Stopping recording...", false);
         } else {
-            if(!isRecording) alert("No active recording");
+            alert("No active recording");
         }
     }
     
-    // ---------- GOOGLE DRIVE UPLOAD (OAuth 2.0 client side) ----------
+    // Google Drive functions
     function loadGapiScript() {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = "https://apis.google.com/js/api.js";
-            script.onload = () => resolve();
+            script.onload = resolve;
             script.onerror = reject;
             document.head.appendChild(script);
         });
     }
     
-    let gapiLoaded = false;
     async function initGapi() {
-        if(gapiLoaded) return;
-        await loadGapiScript();
-        await new Promise((resolve) => gapi.load('client', resolve));
-        await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
-        gapiLoaded = true;
-        updateStatus(driveStatusSpan, "✅ Drive API ready. Click auth to login.", false);
+        if (gapiLoaded) return;
+        
+        try {
+            await loadGapiScript();
+            await new Promise((resolve) => gapi.load('client', resolve));
+            await gapi.client.init({ 
+                apiKey: API_KEY, 
+                discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] 
+            });
+            gapiLoaded = true;
+            updateStatus(driveStatusSpan, "✅ Drive API ready. Click auth to login.", false);
+        } catch (err) {
+            console.error("GAPI init error:", err);
+            updateStatus(driveStatusSpan, "⚠️ Drive API failed to load", true);
+        }
     }
     
     function initTokenClient() {
+        if (typeof google === 'undefined' || !google.accounts) {
+            updateStatus(driveStatusSpan, "⚠️ Google auth not loaded", true);
+            return;
+        }
+        
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
             scope: SCOPES,
             callback: (tokenResponse) => {
-                if(tokenResponse.access_token) {
+                if (tokenResponse.access_token) {
                     accessToken = tokenResponse.access_token;
                     gapi.client.setToken({ access_token: accessToken });
-                    updateStatus(driveStatusSpan, "✅ Google Drive authenticated! Ready to save recordings.", false);
+                    updateStatus(driveStatusSpan, "✅ Google Drive authenticated!", false);
                 } else {
-                    updateStatus(driveStatusSpan, "❌ Auth failed or cancelled", true);
+                    updateStatus(driveStatusSpan, "❌ Auth failed", true);
                 }
             },
         });
     }
     
     async function authenticateDrive() {
-        if(!gapiLoaded) {
+        if (!gapiLoaded) {
             await initGapi();
+        }
+        
+        if (!tokenClient) {
             initTokenClient();
         }
-        if(tokenClient) {
-            tokenClient.callback = (resp) => {
-                if(resp.access_token) {
-                    accessToken = resp.access_token;
-                    gapi.client.setToken({ access_token: accessToken });
-                    updateStatus(driveStatusSpan, "✅ Authenticated! Recordings will be saved.", false);
-                } else {
-                    updateStatus(driveStatusSpan, "Auth error", true);
-                }
-            };
+        
+        if (tokenClient) {
             tokenClient.requestAccessToken({ prompt: 'consent' });
         } else {
-            alert("Token client not ready");
+            alert("Authentication not ready. Please refresh and try again.");
         }
     }
     
     async function uploadToGoogleDrive(blob) {
-        if(!accessToken) {
-            updateStatus(driveStatusSpan, "⚠️ Not authenticated. Recording saved locally? Wait, we need Drive auth. Authenticate first.", true);
-            // fallback: download locally
+        const fileName = `Broadcast_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        
+        if (!accessToken) {
+            // Fallback: download locally
+            updateStatus(driveStatusSpan, "⚠️ Not authenticated - downloading locally", true);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `broadcast_${Date.now()}.webm`;
+            a.download = fileName;
             a.click();
             URL.revokeObjectURL(url);
-            updateStatus(recordStatusSpan, "📁 No Drive auth -> video downloaded locally.", false);
+            updateStatus(recordStatusSpan, "📁 Video downloaded to device", false);
             return;
         }
+        
         try {
             const metadata = {
-                name: `LiveBroadcast_${new Date().toISOString()}.webm`,
+                name: fileName,
                 parents: ['root']
             };
+            
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', blob);
+            
             const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
-                headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+                headers: { 'Authorization': 'Bearer ' + accessToken },
                 body: form
             });
+            
             const result = await response.json();
-            if(response.ok) {
-                updateStatus(recordStatusSpan, `✅ Uploaded to Google Drive! File ID: ${result.id}`, false);
-                updateStatus(driveStatusSpan, `📁 Last upload: ${result.name}`, false);
+            
+            if (response.ok) {
+                updateStatus(recordStatusSpan, `✅ Uploaded to Google Drive!`, false);
+                updateStatus(driveStatusSpan, `📁 Saved: ${fileName}`, false);
             } else {
-                throw new Error(result.error.message);
+                throw new Error(result.error?.message || 'Upload failed');
             }
         } catch(e) {
-            console.error(e);
-            updateStatus(recordStatusSpan, `Upload failed: ${e.message}. Fallback download`, true);
+            console.error("Upload error:", e);
+            updateStatus(recordStatusSpan, `Upload failed: ${e.message}`, true);
+            // Fallback download
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `broadcast_backup.webm`;
+            a.download = fileName;
             a.click();
             URL.revokeObjectURL(url);
-        } finally {
-            startRecordBtn.disabled = false;
-            stopRecordBtn.disabled = true;
+            updateStatus(recordStatusSpan, "📁 Saved locally as fallback", false);
         }
     }
     
-    // ---------- EVENT LISTENERS ----------
+    // Event listeners
     startCamBtn.onclick = startCamera;
-    stopCamBtn.onclick = () => { stopCameraTracks(); };
-    connectViewBtn.onclick = () => { connectToBroadcaster(remoteViewIdInput.value); };
+    stopCamBtn.onclick = stopCameraTracks;
+    connectViewBtn.onclick = () => connectToBroadcaster(remoteViewIdInput.value);
     startRecordBtn.onclick = startRecording;
     stopRecordBtn.onclick = stopRecording;
     authDriveBtn.onclick = authenticateDrive;
     
-    // preload GAPI and Peer scaffolding
-    (async () => {
+    // Initialize everything when PeerJS is ready
+    async function initialize() {
+        await waitForPeerJS();
+        console.log("PeerJS loaded successfully");
+        await initBroadcasterPeer();
+        initViewerPeer();
         await initGapi();
         initTokenClient();
-        initPeerForBroadcast();   // broadcaster peer
-        initViewerPeer();         // viewer side separate peer
-        // check permissions: we handle manually
         updateStatus(driveStatusSpan, "🔑 Click 'Authenticate Google Drive' to enable uploads", false);
-    })();
+    }
     
-    // Cleanup on page unload
+    initialize();
+    
+    // Cleanup
     window.addEventListener('beforeunload', () => {
-        if(localStream) stopCameraTracks();
-        if(peer) peer.destroy();
-        if(viewerPeerInstance) viewerPeerInstance.destroy();
-        if(mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+        if (localStream) stopCameraTracks();
+        if (peer) peer.destroy();
+        if (viewerPeer) viewerPeer.destroy();
+        if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
     });
     
-    // Android Kiwi compatibility: ensure muted autoplay policies
+    // Autoplay support for mobile
     remoteVideoElement.addEventListener('loadedmetadata', () => {
-        remoteVideoElement.play().catch(e => console.warn("autoplay failed", e));
+        remoteVideoElement.play().catch(e => console.log("Autoplay blocked:", e));
     });
     localVideo.addEventListener('loadedmetadata', () => {
-        localVideo.play().catch(e => console.warn("local autoplay", e));
+        localVideo.play().catch(e => console.log("Local autoplay:", e));
     });
 </script>
-<!-- include Google Identity Services for OAuth -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
